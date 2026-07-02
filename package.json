@@ -1,0 +1,25 @@
+{
+  "name": "novascript",
+  "version": "0.1.0",
+  "description": "A modern, safe language that compiles to readable JavaScript",
+  "type": "module",
+  "bin": {
+    "novascript": "./bin/novascript.js"
+  },
+  "main": "./dist/cli/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli/main.ts",
+    "test": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "keywords": ["compiler", "typescript", "javascript"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsx": "^4.22.5",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
