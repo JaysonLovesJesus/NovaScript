@@ -1,0 +1,13 @@
+// math.nova
+// Free functions – usable via UFCS.
+
+import { Vec2 } from "./components";
+
+pub fn normalize(v: Vec2): Vec2 {
+    let mag = sqrt(v.x * v.x + v.y * v.y);  // built‑in → Math.sqrt
+    if (mag == 0) {
+        v
+    } else {
+        Vec2 { x: v.x / mag; y: v.y / mag }
+    }
+}

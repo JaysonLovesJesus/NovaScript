@@ -1,0 +1,41 @@
+// main.nova
+
+import { Entity, Position, Velocity, Health, Sprite } from "./entity";
+import { Vec2 } from "./components";
+import { move_system, damage_system, load_sprites_system, render_system } from "./systems";
+
+pub fn main(): Promise<void> {
+    // Create entities – nominal structs, immutable by default
+    let entities = [
+        Entity {
+            id: 1,
+            pos: Some(Position { pos: Vec2 { x: 0, y: 0 } }),
+            vel: Some(Velocity { vel: Vec2 { x: 1, y: 2 } }),
+            health: Some(Health { amount: 10 }),
+            sprite: Some(Sprite { url: "hero.png", width: 32, height: 32 }),
+        },
+        Entity {
+            id: 2,
+            pos: Some(Position { pos: Vec2 { x: 5; y: 5 } }),
+            vel: None,
+            health: Some(Health { amount: 3 }),
+            sprite: None,
+        }
+    ];
+
+    // Async asset loading – uses load_sprites_system which may fail
+    let load_result = load_sprites_system(entities).await;
+    match load_result {
+        Ok(_) => {
+            // Run game loop for 3 frames
+            for frame in 0..3 {
+                move_system(entities);
+                damage_system(entities, frame);
+                render_system(entities);
+            }
+        },
+        Err(msg) => unsafe {
+            console.error("Asset loading failed:", msg);
+        }
+    }
+}

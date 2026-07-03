@@ -1,33 +1,43 @@
 // CLI Entry Point for NovaScript Compiler
 
-import { compile } from '../compiler/index.js';
-import { readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { compileProject } from '../compiler/index.js';
+import { writeFileSync } from 'fs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const USAGE = 'Usage: novascript compile <file.nova> [--no-prelude] [--dts]';
 
 export function main(args: string[]): void {
-  if (args.length < 2) {
-    console.error('Usage: novascript compile <file.nova>');
+  const flags = args.filter(a => a.startsWith('--'));
+  const positional = args.filter(a => !a.startsWith('--'));
+
+  if (positional.length < 2) {
+    console.error(USAGE);
     process.exit(1);
   }
 
-  const command = args[0];
-  const inputFile = args[1];
+  const command = positional[0];
+  const inputFile = positional[1];
 
   if (command !== 'compile') {
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: novascript compile <file.nova>');
+    console.error(USAGE);
     process.exit(1);
   }
 
   try {
-    const source = readFileSync(inputFile, 'utf-8');
-    const output = compile(source);
-    const outputFile = inputFile.replace(/\.nova$/, '.js');
-    writeFileSync(outputFile, output);
-    console.log(`Compiled ${inputFile} → ${outputFile}`);
+    // Compilation always resolves the import graph from the entry file, so a
+    // single-file program and a multi-file project use the same path.
+    const modules = compileProject(inputFile, {
+      prelude: !flags.includes('--no-prelude'),
+      dts: flags.includes('--dts'),
+    });
+
+    for (const mod of modules) {
+      writeFileSync(mod.outPath, mod.js);
+      if (mod.dts && mod.dtsPath) writeFileSync(mod.dtsPath, mod.dts);
+    }
+
+    const outputs = modules.map(m => m.outPath).join(', ');
+    console.log(`Compiled ${modules.length} module(s) → ${outputs}`);
   } catch (error) {
     console.error('Compilation failed:');
     if (error instanceof Error) {

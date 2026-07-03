@@ -61,11 +61,11 @@ A `struct` defines a new, distinct type. Two structs with identical fields are d
 
 ```rs
 struct Position {
-    pub pos: Vec2,
+    pos: Vec2,
 }
 ```
 
-Fields are private by default; `pub` makes them publicly accessible.
+`pub` marks declarations (fn, struct, enum, methods) as exported; it does not apply to individual fields — a struct's fields are always accessible wherever the struct itself is.
 
 ### 2.3 Nominal Enums (Algebraic Data Types)
 An `enum` defines a tagged union. Each variant can hold zero or more typed payloads.

@@ -95,6 +95,7 @@ describe('NovaScript Compiler', () => {
 
     it('generates if/else', () => {
       const source = `
+        let x = 7;
         if (x > 5) {
           x
         } else {
@@ -108,6 +109,7 @@ describe('NovaScript Compiler', () => {
 
     it('generates while loop', () => {
       const source = `
+        let x = 0;
         while (x < 10) {
           x + 1
         }
@@ -144,19 +146,36 @@ describe('NovaScript Compiler', () => {
 
   describe('Postfix Operators', () => {
     it('handles .await', () => {
-      const source = 'fetch(url).await';
+      const source = `
+        import { fetchData } from "./api.js";
+        fn load(): void {
+          fetchData(1).await;
+        }
+      `;
       const output = compile(source);
       expect(output).toContain('await');
     });
 
     it('handles .try', () => {
-      const source = 'result.try';
+      const source = `
+        fn parse(s: str): Result<num, str> {
+          Ok(1)
+        }
+        fn run(s: str): Result<num, str> {
+          let n = parse(s).try;
+          Ok(n)
+        }
+      `;
       const output = compile(source);
       expect(output).toContain('.tag === "Err"');
     });
 
     it('handles .unwrap_or', () => {
-      const source = 'opt.unwrap_or(0)';
+      const source = `
+        fn get(opt: Option<num>): num {
+          opt.unwrap_or(0)
+        }
+      `;
       const output = compile(source);
       expect(output).toContain('.tag === "None"');
     });

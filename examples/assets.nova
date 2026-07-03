@@ -1,0 +1,18 @@
+// assets.nova
+// Fallible asset loading using an async unsafe fetch plus Result.
+//
+// The unsafe block holds raw JS only (an awaited Promise). The Result is then
+// built in safe NovaScript from the imported Sprite constructor.
+
+import { Sprite } from "./components";
+
+pub async fn load_sprite(url: string): Promise<Result<Sprite, string>> {
+    // Raw JS interop: pretend to fetch, resolving to a dimensions object
+    let response = unsafe { Promise.resolve({ ok: true, width: 32, height: 32 }) }.await;
+
+    if (unsafe { response.ok }) {
+        Ok(Sprite { url: url, width: 32, height: 32 })
+    } else {
+        Err("Failed to load sprite: sprite unavailable")
+    }
+}

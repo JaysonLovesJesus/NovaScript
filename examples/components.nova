@@ -1,0 +1,15 @@
+// components.nova
+
+pub struct Vec2 {
+    x: num,
+    y: num,
+
+    plus(self, other: Vec2): Vec2 {
+        Vec2 { x: self.x + other.x, y: self.y + other.y }
+    }
+}
+
+pub struct Position { pos: Vec2, }
+pub struct Velocity { vel: Vec2, }
+pub struct Health   { amount: num, }
+pub struct Sprite   { url: string, width: num, height: num, }

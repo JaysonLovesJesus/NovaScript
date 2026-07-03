@@ -1,0 +1,75 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`codegen snapshots > compiles fib 1`] = `
+"function fib(n) {
+  if ((n < 2)) {
+    return n;
+  } else {
+    return (fib((n - 1)) + fib((n - 2)));
+  }
+}
+
+function main() {
+  const result = fib(10);
+  console.log(result);
+}
+
+main();"
+`;
+
+exports[`codegen snapshots > compiles hello world 1`] = `
+"function main() {
+  console.log("Hello, NovaScript!");
+}
+
+main();"
+`;
+
+exports[`codegen snapshots > compiles option matching 1`] = `
+"// Prelude
+function Some(value) { return { tag: "Some", value }; }
+const None = { tag: "None" };
+
+function find(arr, target) {
+  let i = 0;
+  while ((i < arr.length)) {
+    if ((arr[i] == target)) {
+      return Some(i);
+    }
+    (i = (i + 1));
+  }
+  return None;
+}
+"
+`;
+
+exports[`match codegen > binds enum variant payloads and falls through failed guards 1`] = `
+"// Shape enum
+function Shape_Circle(value) { return { tag: "Circle", value }; }
+function Shape_Square(value) { return { tag: "Square", value }; }
+const Shape_Empty = { tag: "Empty" };
+
+function area(s) {
+  return (() => {
+  const __match_val = s;
+  if (__match_val.tag === "Circle") {
+    const r = __match_val.value;
+    if ((r > 0)) {
+      return ((3 * r) * r);
+    }
+  }
+  if (__match_val.tag === "Circle") {
+    const r = __match_val.value;
+    return 0;
+  }
+  if (__match_val.tag === "Square") {
+    const side = __match_val.value;
+    return (side * side);
+  }
+  if (__match_val.tag === "Empty") {
+    return 0;
+  }
+})();
+}
+"
+`;

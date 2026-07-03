@@ -11,6 +11,7 @@ export enum TokenType {
   // Literals
   NUMBER = 'NUMBER',
   STRING = 'STRING',
+  TEMPLATE = 'TEMPLATE',
   TRUE = 'TRUE',
   FALSE = 'FALSE',
   
@@ -27,10 +28,15 @@ export enum TokenType {
   WHILE = 'WHILE',
   RETURN = 'RETURN',
   COMPTIME = 'COMPTIME',
+  ASYNC = 'ASYNC',
   UNSAFE = 'UNSAFE',
   IMPORT = 'IMPORT',
   FROM = 'FROM',
-  
+  FOR = 'FOR',
+  IN = 'IN',
+  SELF = 'SELF',
+  AS = 'AS',
+
   // Types
   NUM = 'NUM',
   STR = 'STR',
@@ -69,6 +75,7 @@ export enum TokenType {
   RBRACKET = 'RBRACKET',
   ARROW = 'ARROW',
   FAT_ARROW = 'FAT_ARROW',
+  DOTDOT = 'DOTDOT',
   
   // Postfix operators
   DOT_AWAIT = 'DOT_AWAIT',
@@ -94,9 +101,14 @@ const KEYWORDS: Record<string, TokenType> = {
   'while': TokenType.WHILE,
   'return': TokenType.RETURN,
   'comptime': TokenType.COMPTIME,
+  'async': TokenType.ASYNC,
   'unsafe': TokenType.UNSAFE,
   'import': TokenType.IMPORT,
   'from': TokenType.FROM,
+  'for': TokenType.FOR,
+  'in': TokenType.IN,
+  'self': TokenType.SELF,
+  'as': TokenType.AS,
   'num': TokenType.NUM,
   'str': TokenType.STR,
   'bool': TokenType.BOOL,
@@ -187,6 +199,37 @@ export function tokenize(source: string): Token[] {
       continue;
     }
     
+    // Template strings (backticks). Raw contents are preserved; the parser
+    // splits out ${...} interpolations.
+    if (char === '`') {
+      let value = '';
+      pos++;
+      column++;
+      while (pos < source.length && source[pos] !== '`') {
+        if (source[pos] === '\\' && pos + 1 < source.length) {
+          value += source[pos] + source[pos + 1];
+          pos += 2;
+          column += 2;
+          continue;
+        }
+        if (source[pos] === '\n') {
+          line++;
+          column = 1;
+        } else {
+          column++;
+        }
+        value += source[pos];
+        pos++;
+      }
+      if (pos >= source.length) {
+        throw new LexerError('Unterminated template string', startLine, startColumn);
+      }
+      pos++; // closing backtick
+      column++;
+      tokens.push({ type: TokenType.TEMPLATE, value, line: startLine, column: startColumn });
+      continue;
+    }
+
     // Numbers (with underscore support)
     if (/\d/.test(char)) {
       let value = '';
@@ -282,6 +325,13 @@ export function tokenize(source: string): Token[] {
     
     if (char === '=' && source[pos + 1] === '>') {
       tokens.push({ type: TokenType.FAT_ARROW, value: '=>', line: startLine, column: startColumn });
+      pos += 2;
+      column += 2;
+      continue;
+    }
+
+    if (char === '.' && source[pos + 1] === '.') {
+      tokens.push({ type: TokenType.DOTDOT, value: '..', line: startLine, column: startColumn });
       pos += 2;
       column += 2;
       continue;
