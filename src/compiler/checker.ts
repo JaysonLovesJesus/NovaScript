@@ -8,7 +8,7 @@
 
 import type {
   Program, Expr, Stmt, Block, FunctionDecl, StructDecl, EnumDecl,
-  Pattern, MatchExpr, LetStmt, ImportStmt, TypeAnnotation,
+  Pattern, MatchExpr, LetStmt, ImportStmt, TypeAnnotation, SourceLoc,
 } from './ast.js';
 import {
   Type, Substitution, NUM, STR, BOOL, VOID, UNKNOWN,
@@ -74,6 +74,8 @@ interface FnContext {
   ret: Type;
   typeParams: string[];
   inUnsafe: boolean;
+  /** Set to true when a `.await` is checked in this scope (for closure async). */
+  sawAwait?: boolean;
 }
 
 export class Checker {
@@ -84,9 +86,13 @@ export class Checker {
   private variantCtors = new Map<string, VariantInfo>(); // "Option_Some", plus bare "Some" for the prelude
   private globals = new Scope();
   private context = 'top level';
+  private locs?: WeakMap<object, SourceLoc>;
+  /** The node currently being checked; error() reads its source position. */
+  private currentNode?: object;
 
   check(program: Program, options: CheckOptions = {}): void {
     const usePrelude = options.prelude !== false;
+    this.locs = program.locs;
 
     // Pass 1: collect signatures
     if (usePrelude) {
@@ -221,6 +227,7 @@ export class Checker {
           visitExpr(e.expr);
           e.arms.forEach(a => { if (a.guard) visitExpr(a.guard); visitBlock(a.body); });
           break;
+        case 'closure': break; // a closure's .await belongs to the closure, not this fn
         case 'unsafe_expr': break;
       }
     };
@@ -264,6 +271,12 @@ export class Checker {
         };
       case 'array':
         return { kind: 'array', element: this.toType(ann.element, typeParams) };
+      case 'function':
+        return {
+          kind: 'fn',
+          params: ann.params.map(p => this.toType(p, typeParams)),
+          ret: this.toType(ann.ret, typeParams),
+        };
       case 'nominal': {
         if (typeParams.includes(ann.name)) return { kind: 'typevar', name: ann.name };
         if (this.structs.has(ann.name)) return { kind: 'struct', name: ann.name };
@@ -387,6 +400,41 @@ export class Checker {
     }
   }
 
+  // A closure is its own function scope: params bind in a child scope, `.await`
+  // makes only this closure async, and `.try`/`?`/`return` resolve against the
+  // closure's return type. `expected` (when the closure is an argument to a
+  // fn-typed parameter) supplies param and return types for inference.
+  private checkClosure(
+    expr: Extract<Expr, { kind: 'closure' }>, scope: Scope, ctx: FnContext, expected?: Type,
+  ): Type {
+    const expectedFn = expected?.kind === 'fn' ? expected : undefined;
+    const closureScope = new Scope(scope);
+    const paramTypes: Type[] = expr.params.map((p, i) => {
+      const t = p.type ? this.toType(p.type, ctx.typeParams) : (expectedFn?.params[i] ?? UNKNOWN);
+      closureScope.declare(p.name, { type: t, mutable: false });
+      return t;
+    });
+
+    const bodyCtx: FnContext = {
+      name: 'closure', ret: expectedFn?.ret ?? UNKNOWN,
+      typeParams: ctx.typeParams, inUnsafe: ctx.inUnsafe, sawAwait: false,
+    };
+    const bodyType = expr.body.kind === 'block'
+      ? this.checkBlockValue(expr.body, closureScope, bodyCtx)
+      : this.checkExpr(expr.body, closureScope, bodyCtx);
+
+    expr.isAsync = bodyCtx.sawAwait === true;
+    // When the expected return type is known (and the closure isn't async, whose
+    // body yields the unwrapped value), the body must actually produce it.
+    const expectedRet = expectedFn?.ret;
+    if (!expr.isAsync && expectedRet && expectedRet.kind !== 'unknown'
+        && !typesCompatible(expectedRet, bodyType)) {
+      this.error(`Closure returns ${typeToString(bodyType)} but ${typeToString(expectedRet)} is expected`);
+    }
+    const ret = expectedRet && expectedRet.kind !== 'unknown' ? expectedRet : bodyType;
+    return { kind: 'fn', params: paramTypes, ret, isAsync: expr.isAsync };
+  }
+
   // Type of the value a block evaluates to (its trailing expression)
   private checkBlockValue(block: Block, scope: Scope, ctx: FnContext): Type {
     let result: Type = VOID;
@@ -439,6 +487,7 @@ export class Checker {
   // ---- expressions ----
 
   private checkExpr(expr: Expr, scope: Scope, ctx: FnContext): Type {
+    this.currentNode = expr;
     switch (expr.kind) {
       case 'literal':
         if (typeof expr.value === 'number') return NUM;
@@ -562,6 +611,9 @@ export class Checker {
       case 'unsafe_expr':
         // Raw JS: the compiler trusts it to produce the expected type
         return UNKNOWN;
+
+      case 'closure':
+        return this.checkClosure(expr, scope, ctx);
 
       case 'match':
         return this.checkMatch(expr, scope, ctx);
@@ -766,7 +818,10 @@ export class Checker {
     }
     const subst: Substitution = new Map();
     args.forEach((arg, i) => {
-      const argType = this.checkExpr(arg, scope, ctx);
+      // Closures infer their param/return types from a fn-typed parameter.
+      const argType = arg.kind === 'closure'
+        ? this.checkClosure(arg, scope, ctx, sig.params[i])
+        : this.checkExpr(arg, scope, ctx);
       if (!unify(sig.params[i], argType, subst)) {
         this.error(`${name} argument ${i + 1}: expected ${typeToString(substitute(sig.params[i], subst))}, got ${typeToString(argType)}`);
       }
@@ -814,6 +869,7 @@ export class Checker {
     const inner = this.checkExpr(expr.expr, scope, ctx);
     switch (expr.op) {
       case '.await':
+        ctx.sawAwait = true;
         if (inner.kind === 'promise') return inner.inner;
         if (inner.kind === 'unknown') return UNKNOWN;
         this.error(`.await requires a Promise, got ${typeToString(inner)}`);
@@ -1088,7 +1144,11 @@ export class Checker {
   }
 
   private error(message: string): void {
-    this.diagnostics.push({ message, context: this.context, severity: 'error' });
+    const loc = this.currentNode ? this.locs?.get(this.currentNode) : undefined;
+    this.diagnostics.push({
+      message, context: this.context, severity: 'error',
+      line: loc?.line, column: loc?.column,
+    });
   }
 }
 

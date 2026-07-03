@@ -96,7 +96,11 @@ Type parameters can be inferred at call sites or provided explicitly.
 - `Option<T>` and `Result<V,E>` are standard library enums (not language built‑ins).
 
 ### 2.6 Function Types
-`(param: Type) -> ReturnType`, e.g. `(x: num, y: num) -> num`.
+`(ParamType, ...): ReturnType`, e.g. `(num, num): num` or `(str): bool`. Used to type callback parameters and fields:
+
+```
+fn apply(f: (num): num, x: num): num { f(x) }
+```
 
 ---
 
@@ -107,6 +111,21 @@ Type parameters can be inferred at call sites or provided explicitly.
 - Constructor expressions: `StructName { field: value, ... }`.
 - Enum variant payloads: `Some(5)`, `Err("fail")`.
 - Parenthesised expressions.
+
+### 3.1a Closures
+Anonymous functions with lexical capture:
+
+- Single bare parameter: `fn x => x + 1`
+- Parenthesised (zero or more, optional types): `fn (a, b) => a + b`, `fn (x: num) => x * 2`
+- Block body (last expression is the result): `fn v => { let lo = max(0, v); min(255, lo) }`
+
+A closure is its own function scope: `.try`/`?` return from the *closure*, and `.await` makes only that closure async. Closures compile to plain JS arrow functions. When passed to a `(T): R`-typed parameter, their parameter and return types are inferred from that signature.
+
+```
+let inc     = fn x => x + 1;
+let add     = fn (a, b) => a + b;
+let doubled = twice_each(fn n => n * 2, xs);
+```
 
 ### 3.2 Operators (in order of precedence)
 1. `.` (method call, field access, postfix keywords `.try`, `.await`, `.catch`, `.unwrap`, `?.`, `?`)
@@ -323,8 +342,32 @@ The compiler translates NovaScript source files to clean, idiomatic JavaScript (
 ### 11.2 TypeScript Declaration Files (`.d.ts`)
 The compiler can emit `.d.ts` files, mapping NovaScript’s nominal and structural types to TypeScript interfaces and type aliases, enabling seamless consumption from TypeScript codebases.
 
-### 11.3 Language Server
-A NovaScript LSP server provides autocompletion, diagnostics, go‑to‑definition, and hover types, based on the same type checker used by the compiler.
+### 11.3 Diagnostics
+Lex, parse, and type errors are reported as `rustc`-style code frames with a caret under the offending token:
+
+```
+error: t argument 1: expected num, got str
+  ─> playground.nova:1:39
+  │
+1 │ fn t(n: num): num { n } fn main() { t("x"); }
+  │                                       ^
+```
+
+### 11.4 Formatter
+`novascript fmt <file.nova>...` rewrites source into a canonical, opinionated style: 4‑space indentation, normalized spacing and type aliases, brace‑form match arms, `//` comments preserved. Add `--check` to fail (non‑zero exit) instead of writing, for CI. The formatter is idempotent and semantics‑preserving.
+
+### 11.5 Playground
+A static, dependency‑free web playground lives in `playground/`. Build the browser bundle and serve it:
+
+```
+npm run build:playground          # bundles the compiler to playground/dist/
+python3 -m http.server -d playground 4173
+```
+
+It compiles NovaScript to JS in the browser, runs it live (capturing `console.log`), formats source, and shows the generated JavaScript — all client‑side, no server.
+
+### 11.6 Language Server
+A NovaScript LSP server (planned) will provide autocompletion, diagnostics, go‑to‑definition, and hover types, based on the same type checker used by the compiler.
 
 ---
 

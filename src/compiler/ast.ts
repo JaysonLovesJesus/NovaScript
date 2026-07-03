@@ -1,5 +1,11 @@
 // AST Node Types for NovaScript
 
+/** Source position (1-based line, 1-based column) for diagnostics and formatting. */
+export interface SourceLoc {
+  line: number;
+  column: number;
+}
+
 export type TypeAnnotation =
   | { kind: 'num' }
   | { kind: 'str' }
@@ -9,6 +15,7 @@ export type TypeAnnotation =
   | { kind: 'option', inner: TypeAnnotation }
   | { kind: 'result', ok: TypeAnnotation, err: TypeAnnotation }
   | { kind: 'array', element: TypeAnnotation }
+  | { kind: 'function', params: TypeAnnotation[], ret: TypeAnnotation }
   | { kind: 'nominal', name: string, typeArgs?: TypeAnnotation[] };
 
 export interface Literal {
@@ -94,6 +101,16 @@ export interface TemplateLiteral {
   type?: TypeAnnotation;
 }
 
+/** An anonymous function: `fn x => e`, `fn (x, y) => e`, or `fn (x) => { … }`. */
+export interface ClosureExpr {
+  kind: 'closure';
+  params: { name: string; type?: TypeAnnotation }[];
+  body: Expr | Block;
+  /** Set by the checker when the body uses .await. */
+  isAsync?: boolean;
+  type?: TypeAnnotation;
+}
+
 export type Expr =
   | Literal
   | Identifier
@@ -109,6 +126,7 @@ export type Expr =
   | TupleExpr
   | TemplateLiteral
   | UnsafeExpr
+  | ClosureExpr
   | MatchExpr;
 
 export interface ObjectLiteral {
@@ -263,4 +281,10 @@ export interface Program {
   kind: 'program';
   declarations: (FunctionDecl | StructDecl | EnumDecl)[];
   statements: (Stmt | ImportStmt)[];
+  /**
+   * Source positions per AST node, populated by the parser. Keyed by node
+   * identity so no per-interface `loc` field is needed. Used by the checker
+   * for diagnostics and by the formatter for comment placement.
+   */
+  locs?: WeakMap<object, SourceLoc>;
 }

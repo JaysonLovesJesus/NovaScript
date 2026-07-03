@@ -61,6 +61,10 @@ export function evaluateComptime(program: Program): void {
           transformBlock(a.body);
         });
         return e;
+      case 'closure':
+        if (e.body.kind === 'block') transformBlock(e.body);
+        else e.body = transform(e.body);
+        return e;
     }
   };
 

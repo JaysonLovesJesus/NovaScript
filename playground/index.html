@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NovaScript Playground</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --border: #2a313c;
+    --fg: #d6deeb;
+    --muted: #7d8799;
+    --accent: #7ee787;
+    --accent-dim: #2ea043;
+    --error: #ff7b72;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  header .tag { color: var(--muted); font-size: 12px; }
+  .toolbar { margin-left: auto; display: flex; gap: 8px; }
+  button {
+    font: 500 13px/1 inherit; color: var(--fg);
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; }
+  button.primary:hover { filter: brightness(1.1); }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--border); }
+  .pane-title {
+    padding: 8px 14px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center;
+  }
+  .pane-title .seg { display: flex; gap: 4px; }
+  .pane-title .seg button { padding: 3px 9px; font-size: 11px; }
+  .pane-title .seg button.on { color: var(--accent); border-color: var(--accent-dim); }
+  textarea, pre {
+    flex: 1; margin: 0; padding: 14px; border: 0; resize: none;
+    font-family: var(--mono); font-size: 13px; line-height: 1.55;
+    background: transparent; color: var(--fg); tab-size: 4;
+    overflow: auto; white-space: pre; outline: none;
+  }
+  pre.error { color: var(--error); }
+
+  /* Editor: a transparent textarea layered over a highlighted <pre>. Both must
+     share identical metrics so the caret and glyphs line up exactly. */
+  .editor { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+  .editor > .highlight,
+  .editor > textarea {
+    position: absolute; inset: 0; margin: 0; padding: 14px; border: 0;
+    font-family: var(--mono); font-size: 13px; line-height: 1.55; tab-size: 4;
+    white-space: pre; overflow: auto;
+  }
+  .editor > .highlight { z-index: 0; pointer-events: none; color: var(--fg); }
+  .editor > .highlight code { font: inherit; }
+  .editor > textarea {
+    z-index: 1; background: transparent; color: transparent;
+    caret-color: var(--fg); resize: none; outline: none;
+  }
+  .c-com  { color: #8b949e; font-style: italic; }
+  .c-str  { color: #a5d6ff; }
+  .c-num  { color: #79c0ff; }
+  .c-kw   { color: #ff7b72; }
+  .c-ty   { color: #79c0ff; }
+  .c-lit  { color: #d2a8ff; }
+  .c-ctor { color: #ffa657; }
+  .status { padding: 6px 14px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+  @media (max-width: 780px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } .pane + .pane { border-left: 0; border-top: 1px solid var(--border); } }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>Nova</span>Script <span style="color:var(--muted);font-weight:400">Playground</span></h1>
+  <span class="tag">safe language → readable JavaScript</span>
+  <div class="toolbar">
+    <button id="btn-format">Format</button>
+    <button id="btn-run" class="primary">Run ▸</button>
+  </div>
+</header>
+<main>
+  <section class="pane">
+    <div class="pane-title">NovaScript</div>
+    <div class="editor" id="editor">
+      <pre class="highlight" id="hl" aria-hidden="true"><code></code></pre>
+      <textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+    </div>
+  </section>
+  <section class="pane">
+    <div class="pane-title">
+      <div class="seg">
+        <button id="tab-output" class="on">Output</button>
+        <button id="tab-js">Compiled JS</button>
+      </div>
+    </div>
+    <pre id="out"></pre>
+    <div class="status" id="status">Ready.</div>
+  </section>
+</main>
+
+<script src="./dist/novascript.js"></script>
+<script>
+const DEFAULT_SOURCE = `// NovaScript <-> JavaScript interop.
+// \`unsafe { ... }\` drops to raw JS; a type ascription lets the safe world
+// trust the result. NovaScript structs are plain JS objects, so they pass
+// straight into any JS or npm API.
+
+struct User {
+    name: str,
+    age: num,
+}
+
+// Call a JS global through unsafe; the return type makes it safe to use.
+fn now_ms(): num {
+    unsafe { Date.now() }
+}
+
+// Round-trip a NovaScript struct through the JS JSON API.
+fn to_json(u: User): str {
+    unsafe { JSON.stringify(u) }
+}
+
+// Await a JS Promise with .await, then surface success/failure as a Result.
+async fn fetch_name(): Promise<Result<str, str>> {
+    let res = unsafe { Promise.resolve({ name: "Ada" }) }.await;
+    Ok(unsafe { res.name })
+}
+
+async fn main() {
+    let u = User { name: "Ada", age: 36 };
+    console.log(\`json  = \${to_json(u)}\`);                    // struct -> JS JSON
+    console.log(\`keys  = \${unsafe { Object.keys(u).join(", ") }}\`);
+    console.log(\`now>0 = \${now_ms() > 0}\`);                  // JS Date, typed num
+
+    match fetch_name().await {                                // await a JS Promise
+        Ok(name) => { console.log(\`fetched: \${name}\`); },
+        Err(e) => { console.log(\`error: \${e}\`); },
+    }
+}`;
+
+const srcEl = document.getElementById('src');
+const hlEl = document.getElementById('hl');
+const hlCode = hlEl.firstElementChild;
+const outEl = document.getElementById('out');
+const statusEl = document.getElementById('status');
+const tabOutput = document.getElementById('tab-output');
+const tabJs = document.getElementById('tab-js');
+
+// ── Syntax highlighting ──────────────────────────────────────────────────
+// A tolerant, regex-based tokenizer (never throws on partial input while
+// typing) driving the layered <pre>. Keyword sets mirror the NovaScript lexer.
+const KW = new Set('let mut fn pub struct enum match if else while return comptime async unsafe import from for in self as'.split(' '));
+const TY = new Set('num str bool void Option Result Promise'.split(' '));
+const LIT = new Set('true false'.split(' '));
+const CTOR = new Set('Some None Ok Err'.split(' '));
+
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => (c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'));
+}
+function highlight(code) {
+  const re = /(\/\/[^\n]*)|(`(?:\\.|[^`\\])*`?)|("(?:\\.|[^"\\])*"?)|('(?:\\.|[^'\\])*'?)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_]\w*)/g;
+  let out = '', last = 0, m;
+  while ((m = re.exec(code))) {
+    out += escapeHtml(code.slice(last, m.index));
+    const t = m[0];
+    let cls = '';
+    if (m[1]) cls = 'c-com';
+    else if (m[2] || m[3] || m[4]) cls = 'c-str';
+    else if (m[5]) cls = 'c-num';
+    else if (m[6]) cls = KW.has(t) ? 'c-kw' : TY.has(t) ? 'c-ty' : LIT.has(t) ? 'c-lit' : CTOR.has(t) ? 'c-ctor' : '';
+    out += cls ? `<span class="${cls}">${escapeHtml(t)}</span>` : escapeHtml(t);
+    last = m.index + t.length;
+  }
+  out += escapeHtml(code.slice(last));
+  return out;
+}
+function renderHighlight() {
+  const code = srcEl.value;
+  // trailing newline needs an extra line so heights match and the last line scrolls
+  hlCode.innerHTML = highlight(code) + (code.endsWith('\n') ? '\n' : '');
+  syncScroll();
+}
+function syncScroll() {
+  hlEl.scrollTop = srcEl.scrollTop;
+  hlEl.scrollLeft = srcEl.scrollLeft;
+}
+srcEl.addEventListener('scroll', syncScroll);
+
+srcEl.value = localStorage.getItem('nova.src') || DEFAULT_SOURCE;
+
+let view = 'output';       // 'output' | 'js'
+let lastJs = '';
+let runLogs = [];
+
+// Tee console.log so a program's output shows live in the Output pane.
+let capturing = false;
+const _log = console.log.bind(console);
+console.log = (...args) => {
+  _log(...args);
+  if (capturing) {
+    runLogs.push(args.map(fmt).join(' '));
+    if (view === 'output') renderOutput();
+  }
+};
+function fmt(v) {
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
+function setStatus(msg, isError) {
+  statusEl.textContent = msg;
+  statusEl.style.color = isError ? 'var(--error)' : 'var(--muted)';
+}
+
+function renderOutput() {
+  outEl.className = '';
+  outEl.textContent = runLogs.length ? runLogs.join('\n') : '(no output)';
+}
+function showError(msg) {
+  view = 'output'; syncTabs();
+  outEl.className = 'error';
+  outEl.textContent = msg;
+}
+
+function compileSource() {
+  return NovaScript.compile(srcEl.value, { file: 'playground.nova' });
+}
+
+function run() {
+  localStorage.setItem('nova.src', srcEl.value);
+  let js;
+  try {
+    js = compileSource();
+    lastJs = js;
+  } catch (e) {
+    setStatus('Compile error', true);
+    showError(e.message || String(e));
+    return;
+  }
+  runLogs = [];
+  view = 'output'; syncTabs();
+  renderOutput();
+  capturing = true;
+  try {
+    // Single-file output is self-contained (prelude inlined, no imports).
+    new Function(js + '\n//# sourceURL=playground-program.js')();
+    setStatus('Ran successfully.');
+  } catch (e) {
+    runLogs.push('Runtime error: ' + (e && e.message ? e.message : e));
+    renderOutput();
+    setStatus('Runtime error', true);
+  }
+}
+
+function formatSource() {
+  try {
+    srcEl.value = NovaScript.format(srcEl.value);
+    renderHighlight();
+    localStorage.setItem('nova.src', srcEl.value);
+    setStatus('Formatted.');
+  } catch (e) {
+    setStatus('Cannot format: ' + (e.message || e), true);
+  }
+}
+
+function syncTabs() {
+  tabOutput.classList.toggle('on', view === 'output');
+  tabJs.classList.toggle('on', view === 'js');
+  if (view === 'js') {
+    outEl.className = '';
+    if (!lastJs) { try { lastJs = compileSource(); } catch (e) { showError(e.message); return; } }
+    outEl.textContent = lastJs;
+  } else {
+    renderOutput();
+  }
+}
+
+document.getElementById('btn-run').addEventListener('click', run);
+document.getElementById('btn-format').addEventListener('click', formatSource);
+tabOutput.addEventListener('click', () => { view = 'output'; syncTabs(); });
+tabJs.addEventListener('click', () => { view = 'js'; syncTabs(); });
+
+// Recompile the JS view lazily as you type; invalidate cached output.
+srcEl.addEventListener('input', () => { renderHighlight(); lastJs = ''; if (view === 'js') syncTabs(); });
+
+// Cmd/Ctrl+Enter to run.
+srcEl.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run(); }
+});
+
+renderHighlight();
+renderOutput();
+setStatus('Ready. Press ⌘/Ctrl + Enter to run.');
+</script>
+</body>
+</html>

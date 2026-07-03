@@ -18,6 +18,10 @@ function tsType(ann: TypeAnnotation | undefined): string {
     case 'void': return 'void';
     case 'generic': return ann.name;
     case 'array': return `${tsType(ann.element)}[]`;
+    case 'function': {
+      const params = ann.params.map((p, i) => `arg${i}: ${tsType(p)}`).join(', ');
+      return `(${params}) => ${tsType(ann.ret)}`;
+    }
     case 'option':
       return `({ tag: "Some"; value: ${tsType(ann.inner)} } | { tag: "None" })`;
     case 'result':

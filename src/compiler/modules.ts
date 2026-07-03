@@ -5,13 +5,14 @@
 // others, then lowers and emits one ESM `.js` (and optional `.d.ts`) per file.
 
 import { readFileSync } from 'fs';
-import { dirname, resolve } from 'path';
+import { dirname, resolve, basename } from 'path';
 import { parse } from './parser.js';
 import { check } from './checker.js';
 import { evaluateComptime } from './comptime.js';
 import { lower } from './lower.js';
 import { generate } from './codegen.js';
 import { emitDts } from './dts.js';
+import { formatError, CompileError } from './render.js';
 import type { Program, FunctionDecl, StructDecl, EnumDecl } from './ast.js';
 
 type TopDecl = FunctionDecl | StructDecl | EnumDecl;
@@ -34,6 +35,7 @@ export interface CompiledModule {
 
 interface LoadedModule {
   path: string;
+  source: string;
   program: Program;
   /** Resolved absolute path for each import's source specifier. */
   importTargets: Map<string, string>; // from-specifier -> absolute .nova path
@@ -54,7 +56,12 @@ function loadGraph(entryPath: string): Map<string, LoadedModule> {
     if (modules.has(path)) continue;
 
     const source = readFileSync(path, 'utf-8');
-    const program = parse(source);
+    let program: Program;
+    try {
+      program = parse(source);
+    } catch (err) {
+      throw new CompileError(formatError(err, source, basename(path)));
+    }
     const importTargets = new Map<string, string>();
 
     for (const stmt of program.statements) {
@@ -66,7 +73,7 @@ function loadGraph(entryPath: string): Map<string, LoadedModule> {
       queue.push(target);
     }
 
-    modules.set(path, { path, program, importTargets });
+    modules.set(path, { path, source, program, importTargets });
   }
 
   return modules;
@@ -99,13 +106,18 @@ export function compileProject(entryPath: string, options: ProjectOptions = {}):
       }
     }
 
-    check(mod.program, { prelude: options.prelude, externals });
-    evaluateComptime(mod.program);
-    lower(mod.program);
-
     const isEntry = mod.path === absEntry;
     const externalStructs = externals.filter((d): d is StructDecl => d.kind === 'struct');
-    const js = generate(mod.program, { module: true, entry: isEntry, externalStructs });
+    let js: string;
+    try {
+      check(mod.program, { prelude: options.prelude, externals });
+      evaluateComptime(mod.program);
+      lower(mod.program);
+      js = generate(mod.program, { module: true, entry: isEntry, externalStructs });
+    } catch (err) {
+      if (err instanceof CompileError) throw err;
+      throw new CompileError(formatError(err, mod.source, basename(mod.path)));
+    }
     const outPath = mod.path.replace(/\.nova$/, '.js');
 
     const compiled: CompiledModule = { path: mod.path, outPath, js };

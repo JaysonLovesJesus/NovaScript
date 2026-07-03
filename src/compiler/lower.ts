@@ -170,6 +170,20 @@ class Lowerer {
         }
         return e;
 
+      case 'closure':
+        // A closure is a function boundary: lower its body in a fresh scope so
+        // .try/? hoist to (and early-return from) the closure, not the caller.
+        if (e.body.kind === 'block') {
+          this.lowerBlock(e.body, false);
+        } else {
+          const bodyHoists: Stmt[] = [];
+          const newBody = this.transform(e.body, bodyHoists, false);
+          e.body = bodyHoists.length === 0
+            ? newBody
+            : { kind: 'block', statements: [...bodyHoists, { kind: 'return', value: newBody }] };
+        }
+        return e;
+
       case 'postfix': {
         e.expr = this.transform(e.expr, hoists, inMatchArm);
         if (e.arg) e.arg = this.transform(e.arg, hoists, inMatchArm);
@@ -215,6 +229,7 @@ function containsTryOrQuestion(e: Expr): boolean {
     case 'range': return containsTryOrQuestion(e.start) || containsTryOrQuestion(e.end);
     case 'template': return e.parts.some(p => p.kind === 'expr' && containsTryOrQuestion(p.expr));
     case 'match': return containsTryOrQuestion(e.expr); // arm bodies handled separately
+    case 'closure': return false; // a closure's .try/? belong to the closure, not here
     case 'postfix':
       return e.op === '.try' || e.op === '?'
         || containsTryOrQuestion(e.expr)

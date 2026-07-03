@@ -4,7 +4,7 @@ import { Token, TokenType, tokenize } from './lexer.js';
 import type {
   Program, Expr, Stmt, FunctionDecl, StructDecl, EnumDecl,
   TypeAnnotation, Pattern, MatchArm, EnumVariant, Block, LetStmt, ImportStmt,
-  ForStmt, TemplateLiteral, TemplatePart
+  ForStmt, TemplateLiteral, TemplatePart, SourceLoc
 } from './ast.js';
 import { 
   ReturnStmt, IfStmt, WhileStmt, ExprStmt,
@@ -22,6 +22,7 @@ class Parser {
   private pos = 0;
   private source: string;
   private lineStarts: number[];
+  private locs = new WeakMap<object, SourceLoc>();
 
   constructor(source: string) {
     this.source = source;
@@ -41,12 +42,18 @@ class Parser {
   private advance(): Token { const t = this.current(); if (this.current().type !== TokenType.EOF) this.pos++; return t; }
   private expect(type: TokenType): Token { const t = this.current(); if (t.type !== type) throw new ParseError(`Expected ${type}, got ${t.type}`, t); return this.advance(); }
   private match(...types: TokenType[]): boolean { return types.includes(this.current().type); }
+  /** Record a node's source position (first wins), keyed by node identity. */
+  private stamp<T extends object>(node: T, tok: Token): T {
+    if (!this.locs.has(node)) this.locs.set(node, { line: tok.line, column: tok.column });
+    return node;
+  }
 
   parse(): Program {
     const declarations: (FunctionDecl | StructDecl | EnumDecl)[] = [];
     const statements: (Stmt | ImportStmt)[] = [];
     while (!this.match(TokenType.EOF)) {
       if (this.startsDeclaration()) {
+        const declStart = this.current();
         // Modifier prefix: `pub`? then `async`/`comptime`? then fn/struct/enum
         let isPub = false, isAsync = false, isComptime = false;
         if (this.match(TokenType.PUB)) { this.advance(); isPub = true; }
@@ -57,22 +64,25 @@ class Parser {
           fn.isPub = isPub;
           fn.isAsync = isAsync;
           fn.isComptime = isComptime;
-          declarations.push(fn);
+          declarations.push(this.stamp(fn, declStart));
         } else if (this.match(TokenType.STRUCT)) {
           const s = this.parseStructDecl();
           s.isPub = isPub;
-          declarations.push(s);
+          declarations.push(this.stamp(s, declStart));
         } else if (this.match(TokenType.ENUM)) {
           const e = this.parseEnumDecl();
           e.isPub = isPub;
-          declarations.push(e);
+          declarations.push(this.stamp(e, declStart));
         } else {
           throw new ParseError('Expected fn, struct, or enum', this.current());
         }
-      } else if (this.match(TokenType.IMPORT)) statements.push(this.parseImport());
+      } else if (this.match(TokenType.IMPORT)) {
+        const importStart = this.current();
+        statements.push(this.stamp(this.parseImport(), importStart));
+      }
       else statements.push(this.parseStatement());
     }
-    return { kind: 'program', declarations, statements };
+    return { kind: 'program', declarations, statements, locs: this.locs };
   }
 
   // A top-level declaration begins with `fn`/`struct`/`enum`, optionally
@@ -85,6 +95,11 @@ class Parser {
   }
 
   private parseStatement(): Stmt {
+    const start = this.current();
+    return this.stamp(this.parseStatementInner(), start);
+  }
+
+  private parseStatementInner(): Stmt {
     if (this.match(TokenType.LET)) return this.parseLetStmt();
     if (this.match(TokenType.RETURN)) {
       this.advance();
@@ -125,6 +140,18 @@ class Parser {
   }
 
   private parseBaseType(): TypeAnnotation {
+    // Function type: `(T, U): R` (parenthesized params, `:` then return type).
+    if (this.match(TokenType.LPAREN)) {
+      this.advance();
+      const params: TypeAnnotation[] = [];
+      if (!this.match(TokenType.RPAREN)) {
+        do { params.push(this.parseType()); } while (this.match(TokenType.COMMA) && this.advance());
+      }
+      this.expect(TokenType.RPAREN);
+      this.expect(TokenType.COLON);
+      const ret = this.parseType();
+      return { kind: 'function', params, ret };
+    }
     if (this.match(TokenType.NUM)) { this.advance(); return { kind: 'num' }; }
     if (this.match(TokenType.STR)) { this.advance(); return { kind: 'str' }; }
     if (this.match(TokenType.BOOL)) { this.advance(); return { kind: 'bool' }; }
@@ -281,6 +308,31 @@ class Parser {
     return { kind: 'import', names, from, isUnsafe };
   }
 
+  // Closure: `fn x => body` (single param) or `fn (a, b) => body`
+  // (parenthesized, 0+ params, optional `: type` annotations). Body is an
+  // expression or a `{ block }`.
+  private parseClosure(): Expr {
+    this.expect(TokenType.FN);
+    const params: { name: string; type?: TypeAnnotation }[] = [];
+    if (this.match(TokenType.LPAREN)) {
+      this.advance();
+      if (!this.match(TokenType.RPAREN)) {
+        do {
+          const name = this.expect(TokenType.IDENT).value;
+          const type = this.match(TokenType.COLON) ? (this.advance(), this.parseType()) : undefined;
+          params.push({ name, type });
+        } while (this.match(TokenType.COMMA) && this.advance());
+      }
+      this.expect(TokenType.RPAREN);
+    } else {
+      // Single bare parameter: `fn x => …`
+      params.push({ name: this.expect(TokenType.IDENT).value });
+    }
+    this.expect(TokenType.FAT_ARROW);
+    const body: Expr | Block = this.match(TokenType.LBRACE) ? this.parseBlock() : this.parseExpression();
+    return { kind: 'closure', params, body };
+  }
+
   private parseLetStmt(): LetStmt {
     this.expect(TokenType.LET);
     let mutable = false;
@@ -417,7 +469,10 @@ class Parser {
     throw new ParseError('Expected pattern', this.current());
   }
 
-  private parseExpression(): Expr { return this.parseAssignment(); }
+  private parseExpression(): Expr {
+    const start = this.current();
+    return this.stamp(this.parseAssignment(), start);
+  }
 
   private parseAssignment(): Expr {
     const left = this.parseLogicalOr();
@@ -563,6 +618,12 @@ class Parser {
   }
 
   private parsePrimary(): Expr {
+    const start = this.current();
+    return this.stamp(this.parsePrimaryInner(), start);
+  }
+
+  private parsePrimaryInner(): Expr {
+    if (this.match(TokenType.FN)) return this.parseClosure();
     if (this.match(TokenType.NUMBER)) return { kind: 'literal', value: Number(this.advance().value) };
     if (this.match(TokenType.STRING)) return { kind: 'literal', value: this.advance().value };
     if (this.match(TokenType.TEMPLATE)) return this.parseTemplate(this.advance().value);
