@@ -409,6 +409,9 @@ export class CodeGenerator {
       case 'postfix':
         return this.generatePostfix(expr);
 
+      case 'closure':
+        return this.generateClosure(expr);
+
       case 'object': {
         // A typed literal `Vec2 { x: 1 }` calls the struct constructor so
         // instances carry their methods
@@ -530,6 +533,25 @@ export class CodeGenerator {
     }
 
     return `(() => {\n${gen.output.join('\n')}\n})()`;
+  }
+
+  // A closure compiles to a JS arrow function. A block body returns its trailing
+  // expression (like a fn body); an expression body maps straight across.
+  private generateClosure(expr: Extract<Expr, { kind: 'closure' }>): string {
+    const params = expr.params.map(p => p.name).join(', ');
+    const asyncKw = expr.isAsync ? 'async ' : '';
+    if (expr.body.kind === 'block') {
+      const gen = new CodeGenerator();
+      gen.structs = this.structs;
+      gen.moduleMode = this.moduleMode;
+      gen.indent = 1;
+      gen.generateBlockReturningLast(expr.body);
+      return `${asyncKw}(${params}) => {\n${gen.output.join('\n')}\n}`;
+    }
+    let body = this.generateExpr(expr.body);
+    // A bare object-literal body would be read as a block; parenthesize it.
+    if (expr.body.kind === 'object' && !expr.body.typeName) body = `(${body})`;
+    return `${asyncKw}(${params}) => ${body}`;
   }
 
   // Statement-position match: a plain labelled if-chain instead of an IIFE, so

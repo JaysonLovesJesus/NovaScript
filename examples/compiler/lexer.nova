@@ -1,0 +1,88 @@
+pub struct Token {
+    type: TokenType,
+    value: str,
+    line: num,
+    column: num,
+}
+
+pub enum TokenType {
+    // Literals
+    NUMBER,
+    STRING,
+    // TEMPLATE, // ?
+    TRUE,
+    FALSE,
+
+    // Keywords
+    LET,
+    MUT,
+    FN,
+    PUB,
+    STRUCT,
+    ENUM,
+    MATCH,
+    IF,
+    ELSE,
+    WHILE,
+    RETURN,
+    COMPTIME,
+    ASYNC,
+    UNSAFE,
+    IMPORT,
+    FROM,
+    FOR,
+    IN,
+    SELF, // This?
+    AS,
+
+    // Types
+    NUM,
+    STR,
+    BOOL,
+    VOID,
+    OPTION,
+    RESULT,
+
+    // Identifiers and operators
+    IDENT,
+    PLUS,
+    MINUS,
+    STAR,
+    SLASH,
+    PERCENT,
+    EQ,
+    EQEQ,
+    NEQ,
+    LT,
+    GT,
+    LTE,
+    GTE,
+    AND,
+    OR,
+    NOT,
+    QUESTION,
+    DOT,
+    COMMA,
+    COLON,
+    SEMICOLON,
+    LPAREN,
+    RPAREN,
+    LBRACE,
+    RBRACE,
+    LBRACKET,
+    RBRACKET,
+    FAT_ARROW,
+    DOTDOT,
+
+    // Postfix operators
+    DOT_AWAIT,
+    DOT_TRY,
+    DOT_CATCH,
+    DOT_UNWRAP,
+    DOT_UNWRAP_OR,
+
+    EOF,
+    ERROR,
+}
+
+const KEYWORDS =

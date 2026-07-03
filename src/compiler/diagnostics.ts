@@ -2,8 +2,11 @@
 
 export interface Diagnostic {
   message: string;
-  /** Human-readable context, e.g. "function area" — AST nodes don't carry spans yet */
+  /** Human-readable context, e.g. "function area". */
   context?: string;
+  /** 1-based source position of the offending node, when known. */
+  line?: number;
+  column?: number;
   severity: 'error' | 'warning';
 }
 

@@ -73,7 +73,6 @@ export enum TokenType {
   RBRACE = 'RBRACE',
   LBRACKET = 'LBRACKET',
   RBRACKET = 'RBRACKET',
-  ARROW = 'ARROW',
   FAT_ARROW = 'FAT_ARROW',
   DOTDOT = 'DOTDOT',
   
@@ -125,7 +124,15 @@ export class LexerError extends Error {
   }
 }
 
-export function tokenize(source: string): Token[] {
+/** A `//` line comment captured during lexing (only when onComment is passed). */
+export interface Comment {
+  text: string;
+  line: number;
+  /** True when code precedes the comment on its line (an end-of-line comment). */
+  trailing: boolean;
+}
+
+export function tokenize(source: string, onComment?: (c: Comment) => void): Token[] {
   const tokens: Token[] = [];
   let pos = 0;
   let line = 1;
@@ -152,9 +159,15 @@ export function tokenize(source: string): Token[] {
     
     // Comments
     if (char === '/' && source[pos + 1] === '/') {
+      const commentStart = pos;
       while (pos < source.length && source[pos] !== '\n') {
         pos++;
         column++;
+      }
+      if (onComment) {
+        const raw = source.slice(commentStart, pos).replace(/^\/\/\s?/, '').trimEnd();
+        const trailing = tokens.length > 0 && tokens[tokens.length - 1].line === startLine;
+        onComment({ text: raw, line: startLine, trailing });
       }
       continue;
     }
@@ -311,13 +324,6 @@ export function tokenize(source: string): Token[] {
     
     if (char === '|' && source[pos + 1] === '|') {
       tokens.push({ type: TokenType.OR, value: '||', line: startLine, column: startColumn });
-      pos += 2;
-      column += 2;
-      continue;
-    }
-    
-    if (char === '-' && source[pos + 1] === '>') {
-      tokens.push({ type: TokenType.ARROW, value: '->', line: startLine, column: startColumn });
       pos += 2;
       column += 2;
       continue;
