@@ -1,0 +1,11 @@
+// entity.nova
+
+import { Position, Velocity, Health, Sprite } from "./components";
+
+pub struct Entity {
+    id: num,
+    pos: Option<Position>,
+    vel: Option<Velocity>,
+    health: Option<Health>,
+    sprite: Option<Sprite>,
+}

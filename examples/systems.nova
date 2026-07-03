@@ -1,0 +1,77 @@
+// systems.nova
+
+import { Vec2 } from "./components";
+import { Entity, Position, Velocity, Health, Sprite } from "./entity";
+import { normalize } from "./math";
+import { load_sprite } from "./assets";
+
+// Comptime: pre‑compute damage values
+comptime fn damage_table(size: num): num[] {
+    let mut table = [1];
+    for i in 1..size {
+        table.push(i * 3 + 1);
+    }
+    table
+}
+let DAMAGE = damage_table(5);   // [1, 4, 7, 10, 13]
+
+// ── Movement system ──
+pub fn move_system(entities: Entity[]): void {
+    for entity in entities {
+        // Tuple pattern with Option destructuring
+        match (entity.pos, entity.vel) {
+            (Some(pos), Some(vel)) => {
+                // Operator overloading + UFCS
+                entity.pos = Some(Position {
+                    pos: (pos.pos + vel.vel).normalize()
+                });
+            },
+            _ => {}
+        }
+    }
+}
+
+// ── Damage system (guards) ──
+pub fn damage_system(entities: Entity[], frame: num): void {
+    let base_damage = DAMAGE[frame % DAMAGE.length];
+
+    for entity in entities {
+        match entity.health {
+            Some(h) if h.amount > base_damage => {
+                entity.health = Some(Health { amount: h.amount - base_damage });
+            },
+            Some(_) => {
+                entity.health = None;  // destroyed
+            },
+            None => {}
+        }
+    }
+}
+
+// ── Asset loading system (async, Result, .try) ──
+pub async fn load_sprites_system(entities: Entity[]): Promise<Result<void, string>> {
+    for entity in entities {
+        match entity.sprite {
+            Some(sprite) => {
+                // load_sprite returns Promise<Result<Sprite, string>>
+                let loaded = load_sprite(sprite.url).await.try;   // .await + .try propagation
+                entity.sprite = Some(loaded);
+            },
+            None => {}
+        }
+    }
+    Ok(())
+}
+
+// ── Render system (unsafe for console, optional chaining ?.) ──
+pub fn render_system(entities: Entity[]): void {
+    unsafe {
+        console.log("--- frame ---");
+        for (const e of entities) {
+            let posX = e.pos?.value?.pos.x ?? "?";
+            let posY = e.pos?.value?.pos.y ?? "?";
+            let hp = e.health?.value?.amount ?? "dead";
+            console.log(`Entity ${e.id}: pos=(${posX}, ${posY}) health=${hp}`);
+        }
+    }
+}
